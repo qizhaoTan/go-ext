@@ -1,5 +1,7 @@
 # go-ext
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 [![CI](https://github.com/qizhaoTan/go-ext/actions/workflows/ci.yml/badge.svg)](https://github.com/qizhaoTan/go-ext/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/qizhaoTan/go-ext.svg)](https://pkg.go.dev/github.com/qizhaoTan/go-ext)
 [![Go Report Card](https://goreportcard.com/badge/github.com/qizhaoTan/go-ext)](https://goreportcard.com/report/github.com/qizhaoTan/go-ext)
@@ -8,144 +10,94 @@
 Generic data structures and functional helpers for Go — the parts the standard
 library leaves out.
 
-Zero dependencies. Everything outside `sets` is a pure function: nothing mutates
-its input, `nil` is always treated as empty, and every returned collection is
-freshly allocated.
+> **Status: early development.** The repository is scaffolded and the design is
+> settled, but the packages below are not implemented yet. Nothing here is
+> importable, and the API may still change. Watch the repo if you want to know
+> when the first release lands.
 
-```bash
-go get github.com/qizhaoTan/go-ext
-```
+## Planned packages
 
-Requires Go 1.24 or later.
-
-## Packages
-
-| Package | What it is |
+| Package | Role |
 | --- | --- |
-| [`slices`](https://pkg.go.dev/github.com/qizhaoTan/go-ext/slices) | Eager functional helpers over slices — `Map`, `Filter`, `Reduce`, `GroupBy`, `Chunk`, … |
-| [`iters`](https://pkg.go.dev/github.com/qizhaoTan/go-ext/iters) | **Lazy** pipelines over `iter.Seq` — composes without allocating, works on infinite sequences |
-| [`sets`](https://pkg.go.dev/github.com/qizhaoTan/go-ext/sets) | A generic hash set with the usual algebra |
-| [`maps`](https://pkg.go.dev/github.com/qizhaoTan/go-ext/maps) | `Keys`, `Values`, `Filter`, `Invert`, `Merge`, … |
-| [`ptr`](https://pkg.go.dev/github.com/qizhaoTan/go-ext/ptr) | Value ↔ pointer conversion for optional fields |
-| [`constraints`](https://pkg.go.dev/github.com/qizhaoTan/go-ext/constraints) | Numeric type constraints |
+| `slices` | Eager functional helpers over slices — `Map`, `Filter`, `Reduce`, `GroupBy`, `Chunk`, … |
+| `iters` | **Lazy** pipelines over `iter.Seq` — composes without allocating, works on infinite sequences |
+| `sets` | A generic hash set with the usual algebra |
+| `maps` | `Keys`, `Values`, `Filter`, `Invert`, `Merge`, … |
+| `ptr` | Value ↔ pointer conversion for optional fields |
+| `constraints` | Numeric type constraints |
+
+## Design goals
+
+These are the constraints the implementation is being written against.
+
+**Zero dependencies.** Nothing outside the standard library, ever. A utility
+package that drags in a dependency tree is worse than the code it replaces.
+
+**Purity.** Nothing mutates its arguments. Every returned collection is freshly
+allocated and does not alias the input, so a result can be handed to a caller
+without surprises.
+
+**`nil` is empty.** A `nil` slice or map ranges zero times, so it flows through
+every function as an empty one — no guards, no special cases in the API.
+
+**No standard-library duplication.** Sorting, searching and equality already
+live in the standard `slices` and `maps` packages. This library only fills the
+gaps, which is also why `constraints` will not define `Ordered` — `cmp.Ordered`
+exists.
+
+**Free functions, not method chains.** Go cannot introduce new type parameters
+on methods, so a fluent `.Map().Filter()` API would have to fix the element type
+at construction and could never transform it. The standard library made the
+same choice for the same reason.
+
+**Panic on caller bugs.** A non-positive chunk size has no correct answer.
+Returning something arbitrary hides a bug at the call site; panicking does not.
 
 ## Eager or lazy
 
-The two collection packages are the same operations with different evaluation
-strategies, and picking between them is the main decision this library asks you
-to make.
+The two collection packages will offer the same operations under different
+evaluation strategies, and choosing between them is the main decision this
+library asks of its users.
 
-`slices` is **eager**. Each step allocates a new slice and runs to completion.
-That is the right default: it is simple, it is fast on small inputs, and the
-intermediate values are ordinary slices you can print in a debugger.
+`slices` is **eager**: each step allocates a new slice and runs to completion.
+That is the right default — simple, fast on small inputs, and the intermediate
+values are ordinary slices you can inspect in a debugger.
 
-```go
-import xslices "github.com/qizhaoTan/go-ext/slices"
-
-users := []User{ /* ... */ }
-
-names := xslices.Map(
-    xslices.Filter(users, func(u User) bool { return u.Active }),
-    func(u User) string { return u.Name },
-)
-```
-
-`iters` is **lazy**. Nothing runs until the sequence is consumed, no
+`iters` is **lazy**: nothing runs until the sequence is consumed, no
 intermediate slice is ever built, and only the elements actually demanded are
-touched. That is what makes this terminate:
+touched. That is what lets a pipeline over an infinite sequence terminate.
 
-```go
-import "github.com/qizhaoTan/go-ext/iters"
+The rule of thumb: reach for `iters` when the source is large, expensive, or
+unbounded, and for `slices` the rest of the time.
 
-naturals := iters.Iterate(1, func(n int) int { return n + 1 }) // infinite
+## Requirements
 
-first4 := iters.Collect(iters.Take(
-    iters.Map(
-        iters.Filter(naturals, func(n int) bool { return n%3 == 0 }),
-        func(n int) int { return n * n },
-    ),
-    4,
-))
-// [9 36 81 144] — the pipeline pulled 12 elements, not 1000
-```
-
-Reach for `iters` when the source is large, expensive, or unbounded, and for
-`slices` the rest of the time.
-
-## Examples
-
-### Grouping and aggregating
-
-```go
-byDept := xslices.GroupBy(employees, func(e Employee) string { return e.Dept })
-payroll := xslices.SumBy(employees, func(e Employee) int { return e.Salary })
-senior, junior := xslices.Partition(employees, func(e Employee) bool { return e.Years > 5 })
-```
-
-### Sets
-
-```go
-import "github.com/qizhaoTan/go-ext/sets"
-
-current := sets.Of("read", "write")
-granted := sets.Of("read", "admin")
-
-missing := granted.Difference(current) // Set{admin}
-if current.IsSubsetOf(granted) { /* ... */ }
-
-for perm := range current.All() { // iter.Seq, works with range
-    fmt.Println(perm)
-}
-```
-
-A `Set` is a wrapper over `map[T]struct{}` and is **not** safe for concurrent
-use. Guard it with a mutex, or give each goroutine its own and merge with
-`Union`.
-
-### Optional fields
-
-```go
-import "github.com/qizhaoTan/go-ext/ptr"
-
-req := UpdateRequest{
-    Name:  ptr.To("alice"),      // &"alice" is not valid Go
-    Email: ptr.ToNilable(email), // nil when email is ""
-}
-
-name := ptr.FromOr(resp.Name, "(unknown)")
-```
-
-## Design notes
-
-**Only what the standard library omits.** Sorting, searching and equality live
-in the standard `slices` and `maps` packages; this library does not duplicate
-them. `constraints` deliberately omits `Ordered`, because `cmp.Ordered` exists.
-
-**Errors over silent fallbacks.** `Chunk` panics on a non-positive size rather
-than returning something arbitrary — a zero chunk size is a bug at the call
-site, and hiding it costs more than it saves.
-
-**No method chaining.** Go's type parameters cannot be introduced on methods, so
-a fluent `.Map().Filter()` API would have to fix the element type at
-construction and could never change it. Free functions keep the transformations
-fully generic, which is why the standard library made the same choice.
-
-**No `nil` special cases in the API.** A `nil` slice or map ranges zero times,
-so it flows through every function as an empty one without a guard.
+Go 1.24 or later. The `iters` package is built on `iter.Seq`, which is why the
+floor is not lower.
 
 ## Development
 
 ```bash
-make test    # go test -race ./...
-make cover   # coverage report at coverage.html
-make lint    # golangci-lint
+git clone https://github.com/qizhaoTan/go-ext.git
+cd go-ext
 make check   # fmt + vet + test
 ```
 
+| Target | What it does |
+| --- | --- |
+| `make test` | `go test -race ./...` |
+| `make cover` | Coverage report at `coverage.html` |
+| `make lint` | `golangci-lint run` |
+| `make fmt` | `gofmt -w .` |
+| `make check` | fmt + vet + test — run before every commit |
+
+CI runs the tests with the race detector on Linux, macOS and Windows, against
+both Go 1.24 and the current stable release.
+
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and pull requests are
-welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md). While the library is still being built
+out, opening an issue before a large pull request will save you time.
 
 ## License
 

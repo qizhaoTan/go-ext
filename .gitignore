@@ -1,0 +1,29 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test & coverage
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency dir (vendor is intentionally not committed)
+/vendor/
+
+# Tooling
+/bin/
+/dist/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp

@@ -1,0 +1,34 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - misspell
+    - unconvert
+    - gocritic
+
+  settings:
+    revive:
+      rules:
+        # A public library must document everything it exports.
+        - name: exported
+          arguments: [checkPrivateReceivers]
+
+  exclusions:
+    rules:
+      # Examples read better without exhaustive error handling.
+      - path: example_test\.go
+        linters: [errcheck]
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
